@@ -20,12 +20,21 @@ export const QuizStack = ({ questions, onComplete }: QuizStackProps) => {
   const [skippedQuestions, setSkippedQuestions] = useState<number[]>([]);
   const [isReviewingSkipped, setIsReviewingSkipped] = useState(false);
   const [isCompleted, setIsCompleted] = useState(false);
+  // Add action history to track what was done
+  const [actionHistory, setActionHistory] = useState<
+    Array<{
+      type: "answer" | "skip";
+      index: number;
+      answerId?: number;
+      answer?: string;
+    }>
+  >([]);
 
   const isQuestionAnswered = (index: number) => {
     return answers[questions[index].id] !== undefined;
   };
 
-  // Get the relative position in the stack for answered/skipped cards
+  // Rest of the existing helper functions remain the same...
   const getStackPosition = (index: number) => {
     if (isQuestionAnswered(index)) {
       const answeredBeforeThis = questions
@@ -55,7 +64,6 @@ export const QuizStack = ({ questions, onComplete }: QuizStackProps) => {
     }
 
     if (isQuestionAnswered(index)) {
-      // Answered cards stack to the right with slight offset
       return cn(
         baseStyles,
         "translate-x-[120%]",
@@ -67,7 +75,6 @@ export const QuizStack = ({ questions, onComplete }: QuizStackProps) => {
     }
 
     if (skippedQuestions.includes(index)) {
-      // Skipped cards stack to the left with slight offset
       return cn(
         baseStyles,
         "-translate-x-[120%]",
@@ -78,7 +85,6 @@ export const QuizStack = ({ questions, onComplete }: QuizStackProps) => {
       );
     }
 
-    // Future cards are hidden behind the current card
     return cn(
       baseStyles,
       "translate-x-0 opacity-0 pointer-events-none",
@@ -90,12 +96,23 @@ export const QuizStack = ({ questions, onComplete }: QuizStackProps) => {
     const currentQuestionId = questions[currentIndex].id;
     setAnswers((prev) => ({ ...prev, [currentQuestionId]: answer }));
 
+    // Add to action history
+    setActionHistory((prev) => [
+      ...prev,
+      {
+        type: "answer",
+        index: currentIndex,
+        answerId: currentQuestionId,
+        answer,
+      },
+    ]);
+
     setSkippedQuestions((prev) =>
       prev.filter((index) => index !== currentIndex),
     );
 
     setTimeout(() => {
-      // Check if all questions are answered after this submission
+      // Rest of the submit logic remains the same...
       const nextAnswers = { ...answers, [currentQuestionId]: answer };
       const allAnswered = questions.every(
         (_, index) =>
@@ -142,10 +159,16 @@ export const QuizStack = ({ questions, onComplete }: QuizStackProps) => {
           setCurrentIndex(nextIndex);
         }
       }
-    }, 500); // Allow time for animation
+    }, 500);
   };
 
   const handleSkip = () => {
+    // Add to action history
+    setActionHistory((prev) => [
+      ...prev,
+      { type: "skip", index: currentIndex },
+    ]);
+
     if (!skippedQuestions.includes(currentIndex)) {
       setSkippedQuestions((prev) => [...prev, currentIndex]);
     }
@@ -164,27 +187,37 @@ export const QuizStack = ({ questions, onComplete }: QuizStackProps) => {
       } else {
         setCurrentIndex(nextIndex);
       }
-    }, 500); // Allow time for animation
+    }, 500);
   };
 
   const handleUndo = () => {
-    if (currentIndex > 0) {
-      const prevIndex = currentIndex - 1;
-      const prevQuestionId = questions[prevIndex].id;
+    // Get last action from history
+    const lastAction = actionHistory[actionHistory.length - 1];
 
+    if (!lastAction) return;
+
+    // Remove the last action from history
+    setActionHistory((prev) => prev.slice(0, -1));
+
+    if (lastAction.type === "answer") {
+      // Remove the answer
       const newAnswers = { ...answers };
-      delete newAnswers[prevQuestionId];
-      setAnswers(newAnswers);
-
-      setSkippedQuestions((prev) =>
-        prev.filter((index) => index !== prevIndex),
-      );
-
-      if (isReviewingSkipped) {
-        setIsReviewingSkipped(false);
+      if (lastAction.answerId) {
+        delete newAnswers[lastAction.answerId];
       }
+      setAnswers(newAnswers);
+    } else if (lastAction.type === "skip") {
+      // Remove from skipped questions
+      setSkippedQuestions((prev) =>
+        prev.filter((index) => index !== lastAction.index),
+      );
+    }
 
-      setCurrentIndex(prevIndex);
+    // Go back to the question that was last acted upon
+    setCurrentIndex(lastAction.index);
+
+    if (isReviewingSkipped) {
+      setIsReviewingSkipped(false);
     }
   };
 
